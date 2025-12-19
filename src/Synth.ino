@@ -92,7 +92,7 @@ Ead ead_envelope_filter(MOZZI_CONTROL_RATE); // resolution will be MOZZI_CONTROL
 MultiResonantFilter<uint8_t> multiResFilt;
 RollingAverage <int, 16> kAverage; // Smooths FSLP pressure readings
 
-AudioOutput low_passed;
+//AudioOutput filtered;
 
 
 // --------------------------------------------------------------------------
@@ -324,7 +324,6 @@ void updateControl() {
 
     int cutOff;
     int val;
-    int intval;
     switch(SOUND_NUMBER) {
     case 0: 
       val = FILT_LVL_ATTACK - envelope_filter.next();
@@ -343,8 +342,10 @@ void updateControl() {
       break;
 
     case 3: 
-      val = (ead_envelope_filter.next() + 64);
-      cutOff = min(val, 255) >> 1;
+      //val = (ead_envelope_filter.next() + 64);
+      //cutOff = min(val, 255) >> 1;
+      val = 148 - ( (uint32_t)(envelope_filter.next()* envelope_filter.next() ) >> 7);
+      cutOff = max(16, val);
       break;
 
     default: cutOff = 255 - envelope_filter.next(); break;
@@ -392,6 +393,7 @@ void updateControl() {
 // AUDIO LOOP (Runs at MOZZI_AUDIO_RATE)
 // --------------------------------------------------------------------------
 AudioOutput updateAudio() {
+  AudioOutput filtered;
   envelope.update();
    
   // Calculate Vibrato
@@ -405,10 +407,28 @@ AudioOutput updateAudio() {
                
   uint32_t wave = (envelope.next() * oscMix) >> 8;
 
-  // Apply Low Pass Filter
-  low_passed = multiResFilt.low();
+  // Apply Low Pass or band pass Filter
+  switch (SOUND_NUMBER){
+    case 0:
+      filtered =  multiResFilt.low();
+      break;
+
+    case 1:
+      filtered = multiResFilt.notch();
+      break;
+    
+    case 2: 
+      filtered =  multiResFilt.low();
+      break;
+    
+    case 3:
+      filtered = multiResFilt.high();
+      break;
+  }
+
+
   multiResFilt.next((uint32_t)wave);
-  return MonoOutput::fromNBit(8, low_passed);
+  return MonoOutput::fromNBit(9, filtered);
 }
 
 void loop() {
