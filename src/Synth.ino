@@ -275,7 +275,7 @@ void setup() {
   envelope_filter.setADLevels(FILT_LVL_ATTACK, FILT_LVL_SUSTAIN);
   envelope_filter.setTimes(50, 256, 2400, 1024); //100,100
 
-  ead_envelope_filter.set(50, 512); //attack ms, decay ms
+  ead_envelope_filter.set(50, 128); //attack ms, decay ms
   
   multiResFilt.setCutoffFreqAndResonance(255, resonance);
   Serial.begin(115200);
@@ -338,8 +338,8 @@ void updateControl() {
       break;
 
     case 2: 
-    
-      cutOff = (ead_envelope_filter.next() + 127)>>1;
+      val = (ead_envelope_filter.next() + 64);
+      cutOff = min(val, 255) >> 1;
       break;
 
     case 3: 
