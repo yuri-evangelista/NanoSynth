@@ -120,8 +120,8 @@ volatile uint32_t scaleEncoderPos = 2147483640;
 volatile uint32_t rootOldEncPos = 2147483640;
 volatile uint32_t scaleOldEncPos = 2147483640;
 
-//Button
-int oldCountButtonPressed;
+ //Button
+static int oldCountButtonPressed;
 
 // Interrupt Flags
 volatile byte aFlag = 0;
@@ -211,12 +211,12 @@ void updateOledDisplay() {
  * Returns the current total count.
  */
 int countButtonPress(int pin) {
-  // Static variables persist between function calls
+   // Static variables persist between function calls
   static int internalCounter = 0;
   static int lastButtonState = HIGH;
   static int stableButtonState = HIGH;
   static unsigned long lastDebounceTime = 0;
-  const unsigned long DEBOUNCE_DELAY = 50;
+  const unsigned long DEBOUNCE_DELAY = 25;
 
   int reading = digitalRead(pin);
 
@@ -278,7 +278,7 @@ void setup() {
   ead_envelope_filter.set(50, 128); //attack ms, decay ms
   
   multiResFilt.setCutoffFreqAndResonance(255, resonance);
-  Serial.begin(115200);
+  //Serial.begin(115200);
   startMozzi();
 }
 
@@ -304,8 +304,6 @@ void updateControl() {
   int currentCountButtonPressed = countButtonPress(PIN_SOUND_BUTTON) % 4;
   if (oldCountButtonPressed != currentCountButtonPressed) {
     SOUND_NUMBER = currentCountButtonPressed ;
-    Serial.println(SOUND_NUMBER);
-
     oldCountButtonPressed = currentCountButtonPressed;
     updateOledDisplay();
     envelope.noteOff();
@@ -333,22 +331,22 @@ void updateControl() {
       cutOff = max(48, val);
       break;
 
-    case 1:   
-      cutOff = envelope_filter.next(); 
-      break;
-
-    case 2: 
-      val = (ead_envelope_filter.next() + 64);
-      cutOff = min(val, 255) >> 1;
-      break;
-
-    case 3: 
+    case 1: 
       val = (  envelope_filter.next() - ead_envelope_filter.next()) + 127;
       val = max(48, val);
       val = min(val, 127);
       cutOff = ( val * envelope_filter.next() ) >> 7; 
       break;
-    
+
+    case 2:   
+      cutOff = envelope_filter.next(); 
+      break;
+
+    case 3: 
+      val = (ead_envelope_filter.next() + 64);
+      cutOff = min(val, 255) >> 1;
+      break;
+
     default: cutOff = 255 - envelope_filter.next(); break;
   }
  
