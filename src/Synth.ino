@@ -15,8 +15,8 @@
 #include <Ead.h> 
 #include <ResonantFilter.h>
 #include <RollingAverage.h>
-#include <tables/saw1024_int8.h>
-#include <tables/chum78_int8.h>
+#include <tables/saw2048_int8.h>
+#include <tables/triangle_dist_squared_2048_int8.h>
 #include <tables/triangle_valve_2_2048_int8.h>
 #include <tables/cos1024_int8.h>
 #include <tables/square_analogue512_int8.h> //added
@@ -76,9 +76,8 @@ const int FILT_LVL_SUSTAIN = 32;
 SSD1306AsciiAvrI2c oled;
 
 // Oscillators
-Oscil<SAW1024_NUM_CELLS, MOZZI_AUDIO_RATE> aOscil(SAW1024_DATA);
-Oscil<TRIANGLE_VALVE_2_2048_NUM_CELLS, MOZZI_AUDIO_RATE> bOscil(TRIANGLE_VALVE_2_2048_DATA);
-Oscil<CHUM78_NUM_CELLS, MOZZI_AUDIO_RATE> cOscil(CHUM78_DATA);
+Oscil<SAW2048_NUM_CELLS, MOZZI_AUDIO_RATE> aOscil(SAW2048_DATA);
+Oscil<TRIANGLE_DIST_SQUARED_2048_NUM_CELLS, MOZZI_AUDIO_RATE> bOscil(TRIANGLE_DIST_SQUARED_2048_NUM_CELLS);
 Oscil<SQUARE_ANALOGUE512_NUM_CELLS, MOZZI_AUDIO_RATE> dOscil(SQUARE_ANALOGUE512_DATA);
 
 Oscil<COS1024_NUM_CELLS, MOZZI_AUDIO_RATE> aVibrato(COS1024_DATA);
@@ -92,8 +91,9 @@ Ead ead_envelope_filter(MOZZI_CONTROL_RATE); // resolution will be MOZZI_CONTROL
 MultiResonantFilter<uint8_t> multiResFilt;
 RollingAverage <int, 16> kAverage; // Smooths FSLP pressure readings
 
-//AudioOutput filtered;
-
+EventDelay kFslpDelay; // Throttle FSLP reads
+EventDelay kPotDelay;  // Throttle Potentiometer reads
+EventDelay kDisplayDelay; // Throttle Display Update
 
 // --------------------------------------------------------------------------
 // STATE VARIABLES
@@ -264,7 +264,7 @@ void setup() {
   // 3. Audio Init
   aOscil.setPhase(113);
   bOscil.setPhase(223);
-  cOscil.setPhase(31);
+  //cOscil.setPhase(31);
   dOscil.setPhase(179);
   
   aVibrato.setFreq(vibFreq);
@@ -279,6 +279,17 @@ void setup() {
   
   multiResFilt.setCutoffFreqAndResonance(255, resonance);
   //Serial.begin(115200);
+
+   // Initialize Timers
+  kFslpDelay.set(15); // Check FSLP every ~15ms (approx 66Hz)
+  kFslpDelay.start();
+
+  kPotDelay.set(250); // Check pots every 100ms
+  kPotDelay.start();
+
+  kDisplayDelay.set(250);
+  kDisplayDelay.start(100);
+
   startMozzi();
 }
 
@@ -287,6 +298,7 @@ void setup() {
 // --------------------------------------------------------------------------
 void updateControl() {
 
+  if (kDisplayDelay.ready()) {
   // --- 1. Handle Encoder Changes ---
   if (rootOldEncPos != rootEncoderPos) {
     ROOT_NOTE = (rootEncoderPos % 12) + 57;
@@ -299,7 +311,8 @@ void updateControl() {
     updateOledDisplay();
     scaleOldEncPos = scaleEncoderPos;
   } 
-  
+  kDisplayDelay.start();
+  }
   // --- 2. Handle Push Button for sound change ---
   int currentCountButtonPressed = countButtonPress(PIN_SOUND_BUTTON) % 4;
   if (oldCountButtonPressed != currentCountButtonPressed) {
@@ -311,10 +324,11 @@ void updateControl() {
   }
 
   // --- 3. Handle Potentiometers (Throttled) ---
-  if (rand(CONTROL_RATE/2) == 0) { 
+  if (kPotDelay.ready()) { 
     intensity = analogRead(PIN_POT_INTENSITY) / 1024.f;
     vibFreq = analogRead(PIN_POT_VIB_FREQ) / 100.f + 1;
     aVibrato.setFreq(vibFreq);
+    kPotDelay.start();
     
   }
 
@@ -330,30 +344,32 @@ void updateControl() {
       cutOff = max(48, val);
       break;
 
-    case 1: 
+    case 1:   
+      cutOff = envelope_filter.next(); 
+      break;
+
+    case 2: 
       val = (  envelope_filter.next() - ead_envelope_filter.next()) + 127;
       val = max(48, val);
       val = min(val, 127);
       cutOff = ( val * envelope_filter.next() ) >> 7; 
       break;
 
-    case 2:   
-      cutOff = envelope_filter.next(); 
-      break;
-
     case 3: 
-      //val = (ead_envelope_filter.next() + 64);
-      //cutOff = min(val, 255) >> 1;
-      val = 148 - ( (uint32_t)(envelope_filter.next()* envelope_filter.next() ) >> 7);
-      cutOff = max(16, val);
+      //cutOff = ( ((uint16_t)(sq(ead_envelope_filter.next() ) ) ) >> 8 );
+      //cutOff = ((uint16_t)(ead_envelope_filter.next()+120) ) >> 2 ;
+      cutOff = ((uint16_t)(ead_envelope_filter.next())+64 ) >> 2 ;
       break;
-
+    
     default: cutOff = 255 - envelope_filter.next(); break;
   }
  
   multiResFilt.setCutoffFreqAndResonance( cutOff, resonance);
 
+
   // --- 5. Handle FSLP Sensor ---
+ if(kFslpDelay.ready()) {
+ 
   bool isNoteActive = getFSLP(PIN_FSLP_SENSE, PIN_FSLP_DRIVE1, PIN_FSLP_DRIVE2, PIN_FSLP_BOT_R0, 
                               fslpPressure, fslpPosition, fslpGrade, fslpGain);
  
@@ -371,9 +387,9 @@ void updateControl() {
 
     // Update Oscillators
     aOscil.setFreq_Q16n16(s_freq);
-    bOscil.setFreq_Q16n16(s_freq / 3.0f + 0.3f);
-    cOscil.setFreq_Q16n16(s_freq / 2.0f - 0.5f);
-    dOscil.setFreq_Q16n16(s_freq / 3.0f  + 0.2f);
+    bOscil.setFreq_Q16n16(s_freq /3.0f + 0.3f);
+    //cOscil.setFreq_Q16n16(s_freq / 2.0f - 0.5f);
+    dOscil.setFreq_Q16n16(s_freq /3.0f  + 0.2f);
 
     envelope.noteOn();
     envelope_filter.noteOn();
@@ -384,6 +400,8 @@ void updateControl() {
     envelope.noteOff();
     envelope_filter.noteOff();
   } 
+     kFslpDelay.start();
+  }
    
   // --- 6. Update Filter Envelope ---
   envelope_filter.update();
@@ -401,33 +419,32 @@ AudioOutput updateAudio() {
   
   // Mix Oscillators
   int oscMix = (aOscil.phMod(vibratoVal)) + 
-               (bOscil.next() >> 1) + 
-               (cOscil.next() >> 1) +
+               (bOscil.next() >> 2) + 
                (dOscil.next() >> 1);
-               
-  uint32_t wave = (envelope.next() * oscMix) >> 8;
+  
+
+  uint16_t wave = (envelope.next() * oscMix) >> 8;
+  
+
+  multiResFilt.next((uint16_t)wave);
+
 
   // Apply Low Pass or band pass Filter
   switch (SOUND_NUMBER){
-    case 0:
-      filtered =  multiResFilt.low();
-      break;
-
-    case 1:
+    case 2:
       filtered = multiResFilt.notch();
       break;
     
-    case 2: 
-      filtered =  multiResFilt.low();
+    case 3:
+      filtered = multiResFilt.band()<<1;
       break;
     
-    case 3:
-      filtered = multiResFilt.high();
+    default: //sounds 0 and 1
+      filtered =  multiResFilt.low();
       break;
   }
 
 
-  multiResFilt.next((uint32_t)wave);
   return MonoOutput::fromNBit(9, filtered);
 }
 
