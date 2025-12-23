@@ -61,7 +61,7 @@ const byte PIN_SOUND_BUTTON     = 12;   // Push button for sound change
 // AUDIO SETTINGS
 // --------------------------------------------------------------------------
 #define MOZZI_AUDIO_MODE MOZZI_OUTPUT_2PIN_PWM 
-#define MOZZI_AUDIO_BITS_PER_CHANNEL 8
+#define MOZZI_AUDIO_BITS_PER_CHANNEL 7
 
 // Envelope Timing (Attack, Decay, Sustain, Release)
 const int ENV_LVL_ATTACK  = 180;
@@ -78,7 +78,7 @@ SSD1306AsciiAvrI2c oled;
 // Oscillators
 Oscil<SAW2048_NUM_CELLS, MOZZI_AUDIO_RATE> aOscil(SAW2048_DATA);
 Oscil<TRIANGLE_DIST_SQUARED_2048_NUM_CELLS, MOZZI_AUDIO_RATE> bOscil(TRIANGLE_DIST_SQUARED_2048_NUM_CELLS);
-Oscil<SQUARE_ANALOGUE512_NUM_CELLS, MOZZI_AUDIO_RATE> dOscil(SQUARE_ANALOGUE512_DATA);
+Oscil<SQUARE_ANALOGUE512_NUM_CELLS, MOZZI_AUDIO_RATE> cOscil(SQUARE_ANALOGUE512_DATA);
 
 Oscil<COS1024_NUM_CELLS, MOZZI_AUDIO_RATE> aVibrato(COS1024_DATA);
 
@@ -264,8 +264,7 @@ void setup() {
   // 3. Audio Init
   aOscil.setPhase(113);
   bOscil.setPhase(223);
-  //cOscil.setPhase(31);
-  dOscil.setPhase(179);
+  cOscil.setPhase(179);
   
   aVibrato.setFreq(vibFreq);
 
@@ -388,8 +387,7 @@ void updateControl() {
     // Update Oscillators
     aOscil.setFreq_Q16n16(s_freq);
     bOscil.setFreq_Q16n16(s_freq /3.0f + 0.3f);
-    //cOscil.setFreq_Q16n16(s_freq / 2.0f - 0.5f);
-    dOscil.setFreq_Q16n16(s_freq /3.0f  + 0.2f);
+    cOscil.setFreq_Q16n16(s_freq /3.0f  + 0.2f);
 
     envelope.noteOn();
     envelope_filter.noteOn();
@@ -420,7 +418,7 @@ AudioOutput updateAudio() {
   // Mix Oscillators
   int oscMix = (aOscil.phMod(vibratoVal)) + 
                (bOscil.next() >> 2) + 
-               (dOscil.next() >> 1);
+               (cOscil.next() >> 1);
   
 
   uint16_t wave = (envelope.next() * oscMix) >> 8;
